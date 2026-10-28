@@ -124,6 +124,15 @@ var isAdmin = () => role === 'admin', fmt = n => Math.round(n * 100) / 100;
 var dt = t => new Date(t).toLocaleString('ar-EG');
 var itemsOf = i => i.items || [{ prodId: i.prodId, name: i.prodName, qty: i.qty, price: i.qty ? i.total / i.qty : 0, cost: 0 }];
 var TS = () => firebase.database.ServerValue.TIMESTAMP;
+  function log(action, details) {
+  var u = auth.currentUser;
+  db.ref('logs').push({
+    date: TS(),
+    user: u ? u.email : 'System',
+    action: action,
+    details: details || ''
+  });
+}
 function updateConnectionBanner(){
   var b=$('offlineBanner');
   if(!b)return;
