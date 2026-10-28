@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SellSmart</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2c3e50">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SellSmart">
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+<style>
+:root{--p:#2c3e50;--s:#16a085;--a:#c0392b;--w:#d35400}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:#f4f6f7;margin:0;padding:12px}
+header{background:var(--p);color:#fff;padding:12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header h1{margin:0;font-size:17px;flex:1;text-align:center}
+nav{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px}
+nav button{width:auto;white-space:nowrap;margin:0;background:#fff;color:var(--p);border:1px solid #ccc;padding:8px 12px;font-size:14px}
+.card{background:#fff;padding:16px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,.06);overflow-x:auto;margin-bottom:12px}
+h2{border-bottom:2px solid #eee;padding-bottom:8px;color:var(--p);font-size:17px;margin-top:0}
+input,select{width:100%;padding:9px;margin:5px 0;border:1px solid #ddd;border-radius:4px;box-sizing:border-box}
+button{background:var(--s);color:#fff;border:0;padding:10px;border-radius:4px;cursor:pointer;width:100%;font-size:15px;margin-top:8px}
+button:disabled{opacity:.5}
+.d{background:var(--a)}.o{background:var(--w)}
+.sm{padding:4px 8px;font-size:12px;width:auto;margin:2px;display:inline-block}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+th,td{border:1px solid #e0e0e0;padding:6px;text-align:center}
+th{background:#f8f9fa}
+.row{display:flex;gap:6px}
+.ret{background:#fadbd8;color:#7f8c8d;text-decoration:line-through}
+.low{background:#fff3cd}
+.alert{background:#fdebd0;border:1px solid var(--w);color:#a04000;padding:8px;border-radius:8px;margin-bottom:10px;font-size:13px;display:none}
+.kpi{display:flex;gap:6px;text-align:center;flex-wrap:wrap}.kpi div{flex:1;min-width:90px;background:#f8f9fa;padding:8px;border-radius:6px;font-size:13px}.kpi b{display:block;font-size:16px;color:var(--p)}
+#authScreen{max-width:400px;margin:70px auto;background:#fff;padding:26px;border-radius:8px;text-align:center}
+#mainApp,#printArea,#camBox{display:none}
+#camBox{position:fixed;inset:0;background:#000;z-index:9;text-align:center}#camBox video{width:100%;max-height:80%}
+.admin-only{display:none}body.is-admin .admin-only{display:revert}
+.tab:not(.on){display:none!important}
+@media print{#authScreen,#mainApp{display:none!important}#printArea{display:block}}
+</style>
+</head>
+<body>
+<div id="authScreen">
+  <h2>SellSmart 🛒</h2><p style="color:#777;margin-top:-8px">نظام المبيعات والمخزون</p>
+  <input type="email" id="loginEmail" placeholder="البريد الإلكتروني" autocomplete="username">
+  <input type="password" id="loginPassword" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')handleLogin()">
+  <button onclick="handleLogin()">دخول</button>
+  <p id="authError" style="color:red;font-size:14px"></p>
+  <p id="connectionNote" style="color:#777;font-size:12px">تسجيل الدخول وبيانات Firebase يحتاجان اتصالًا بالإنترنت.</p>
+</div>
+<div id="camBox"><video id="cam" playsinline muted></video><button class="d" onclick="stopScan()">إغلاق الكاميرا</button></div>
+<div id="mainApp">
+<header><span id="userInfo" style="font-size:12px"></span><h1>SellSmart</h1><button class="d sm" onclick="handleLogout()">خروج</button></header>
+<div id="offlineBanner" class="alert" style="display:block"></div>
+<div id="lowBanner" class="alert"></div>
+<nav>
+  <button onclick="tab('pos')">🛒 البيع</button><button onclick="tab('inv')">📦 المخزون</button><button onclick="tab('bill')">🧾 الفواتير</button>
+  <button class="admin-only" onclick="tab('rep')">📊 التقارير</button><button class="admin-only" onclick="tab('log')">📜 السجل</button><button class="admin-only" onclick="tab('usr')">👥 المستخدمين</button>
+</nav>
+<section class="tab on card" id="t-pos">
+  <h2>البيع</h2>
+  <div class="row"><input id="barcode" placeholder="باركود (اكتب أو امسح ثم Enter)" onkeydown="if(event.key==='Enter'){addByBarcode(this.value);this.value=''}"><button class="sm" style="margin:5px 0" onclick="scan()">📷</button></div>
+  <input type="search" id="posSearch" placeholder="🔍 ابحث باسم الصنف" oninput="renderUI()">
+  <select id="salesProdSelect"></select><input type="number" id="salesQty" value="1" min="1">
+  <button onclick="addToCart()">إضافة للسلة</button>
+  <table><thead><tr><th>المنتج</th><th>الكمية</th><th>الإجمالي</th><th></th></tr></thead><tbody id="cartTable"></tbody></table>
+  <div class="row"><select id="discType"><option value="%">خصم %</option><option value="ج">خصم ج.م</option></select><input type="number" id="discVal" placeholder="الخصم" min="0" oninput="renderCart()"></div>
+  <select id="payMethod"><option>كاش</option><option>فودافون كاش</option><option>إنستا باي</option><option>فيزا</option></select>
+  <div class="row"><input id="custName" placeholder="اسم العميل (اختياري)"><input id="custPhone" type="tel" placeholder="التليفون (اختياري)"></div>
+  <p>الإجمالي: <b id="cartTotal">0</b> ج.م</p>
+  <button id="saleBtn" class="d" onclick="checkout()">إتمام وإصدار الفاتورة</button>
+  <button class="o" onclick="closeShift()">إقفال الوردية</button>
+</section>
+<section class="tab card" id="t-inv">
+  <div class="admin-only">
+    <h2>إضافة منتج</h2><input id="prodName" placeholder="اسم المنتج">
+    <select id="prodCategory"><option>عناية بالبشرة</option><option>مكياج</option><option>عناية بالشعر</option><option>عطور</option><option>أخرى</option></select>
+    <input id="prodBarcode" placeholder="الباركود (اختياري)">
+    <div class="row"><input type="number" id="prodCost" placeholder="سعر الشراء" min="0"><input type="number" id="prodPrice" placeholder="سعر البيع" min="0"></div>
+    <input type="number" id="prodQty" placeholder="الكمية" min="0"><button onclick="addProduct()">إضافة</button>
+  </div>
+  <h2>المخزون</h2><input type="search" id="invSearch" placeholder="🔍 بحث بالاسم أو القسم أو الباركود" oninput="renderUI()">
+  <table><thead><tr><th>المنتج</th><th>القسم</th><th>البيع</th><th class="admin-only">الشراء</th><th>الكمية</th><th class="admin-only">إجراءات</th></tr></thead><tbody id="inventoryTable"></tbody></table>
+</section>
+<section class="tab card" id="t-bill">
+  <h2>الفواتير والمرتجعات</h2><input type="search" id="billSearch" placeholder="🔍 منتج / رقم فاتورة / اسم أو تليفون عميل" oninput="renderUI()">
+  <select id="billStatus" onchange="renderUI()"><option value="">كل الحالات</option><option value="ok">مكتملة</option><option value="ret">مرتجعة (كلي أو جزئي)</option></select>
+  <p id="billSum" style="font-size:13px;color:#555"></p>
+  <table><thead><tr><th>الفاتورة</th><th>التاريخ</th><th>المنتجات</th><th>الإجمالي</th><th>الدفع</th><th>الحالة</th><th></th></tr></thead><tbody id="invoicesTable"></tbody></table>
+</section>
+<section class="tab admin-only card" id="t-rep"><h2>التقارير</h2><div id="repBox"></div></section>
+<section class="tab admin-only card" id="t-log"><h2>الورديات المقفولة</h2>
+<table><thead><tr><th>الكاشير</th><th>الفترة</th><th>فواتير</th><th>الإجمالي</th><th>التفاصيل</th></tr></thead><tbody id="shiftTable"></tbody></table>
+<h2 style="margin-top:20px">سجل العمليات (آخر 50)</h2><table><thead><tr><th>الوقت</th><th>المستخدم</th><th>العملية</th><th>التفاصيل</th></tr></thead><tbody id="logTable"></tbody></table></section>
+<section class="tab admin-only card" id="t-usr">
+  <h2>إعدادات المحل</h2><input id="storeNameInput" placeholder="اسم المحل (يظهر على الفاتورة)"><button onclick="saveStoreName()">حفظ الاسم</button>
+  <h2 style="margin-top:20px">إدارة المستخدمين</h2><input type="email" id="newUserEmail" placeholder="إيميل المستخدم"><input type="password" id="newUserPass" placeholder="كلمة المرور (6+ حروف)">
+  <select id="newUserRole"><option value="cashier">كاشير</option><option value="admin">مدير</option></select><button onclick="addUser()">إضافة مستخدم</button>
+  <table><thead><tr><th>المستخدم</th><th>الدور</th></tr></thead><tbody id="usersTable"></tbody></table>
+</section>
+</div>
+<div id="printArea"></div>
+<script>
+var firebaseConfig = {
+  apiKey: "AIzaSyCVnS-4hbj6D-A0jWheSYYQwRmtZxT7s1s",
+  authDomain: "wow-store-919c1.firebaseapp.com",
+  databaseURL: "https://wow-store-919c1-default-rtdb.firebaseio.com",
+  projectId: "wow-store-919c1",
+  storageBucket: "wow-store-919c1.firebasestorage.app",
+  messagingSenderId: "610787943735",
+  appId: "1:610787943735:web:c28cbed2ab1c1e3d7ce6b2",
+  measurementId: "G-FBGCD8D1KZ"
+};
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+var storeName = 'SellSmart';
+var LOW = 5, auth = firebase.auth(), db = firebase.database();
+var products = [], invoices = [], users = [], cart = [], role = 'cashier', on = false;
+var $ = id => document.getElementById(id), P = id => products.find(p => p.id === id);
+var esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+var isAdmin = () => role === 'admin', fmt = n => Math.round(n * 100) / 100;
+var dt = t => new Date(t).toLocaleString('ar-EG');
+var itemsOf = i => i.items || [{ prodId: i.prodId, name: i.prodName, qty: i.qty, price: i.qty ? i.total / i.qty : 0, cost: 0 }];
+var TS = () => firebase.database.ServerValue.TIMESTAMP;
+function updateConnectionBanner(){
+  var b=$('offlineBanner');
+  if(!b)return;
+  b.textContent = navigator.onLine
+    ? '🟢 متصل بالإنترنت — بيانات البيع تُحفظ في Firebase.'
+    : '🔴 غير متصل — الواجهة قد تعمل، لكن الحفظ والبيع غير متاحين أوفلاين في هذه النسخة.';
+  b.style.background = navigator.onLine ? '#d5f5e3' : '#fdebd0';
+  b.style.color = navigator.onLine ? '#145a32' : '#a04000';
+}
+window.addEventListener('online', updateConnectionBanner);
+window.addEventListener('offline', updateConnectionBanner);
+function tab(n) { document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 't-' + n)); if (n === 'rep') renderReport(); }
+auth.onAuthStateChanged(user => {
+  if (!user) { $('mainApp').style.display = 'none'; $('authScreen').style.display = 'block'; document.body.classList.remove('is-admin'); return; }
+  db.ref('users/' + user.uid).once('value').then(s => { var u = s.val(); role = u && u.role ? u.role : 'cashier'; })
+  .catch(() => { role = 'cashier'; }).then(() => {
+    if (role === 'disabled') { alert('هذا الحساب معطّل.'); auth.signOut(); return; }
+    $('authScreen').style.display = 'none'; $('mainApp').style.display = 'block';
+    document.body.classList.toggle('is-admin', isAdmin());
+    $('userInfo').innerText = user.email + ' (' + (isAdmin() ? 'مدير' : 'كاشير') + ')';
+    tab('pos'); startListeners(); updateConnectionBanner();
+  });
+});
+function handleLogin() {
+  $('authError').innerText = '';
+  auth.signInWithEmailAndPassword($('loginEmail').value.trim(), $('loginPassword').value).catch(e => { $('authError').innerText = 'خطأ: ' + e.code; });
+}
+function handleLogout() {
+  ['products', 'invoices', 'users', 'logs', 'shifts', 'settings/storeName'].forEach(r => db.ref(r).off());
+  on = false; cart = []; auth.signOut();
+}
+function startListeners() {
+  if (on) return; on = true;
+  db.ref('settings/storeName').on('value', s => { storeName = s.val() || 'SellSmart'; if ($('storeNameInput')) $('storeNameInput').value = s.val() || ''; });
+  db.ref('products').on('value', s => { products = []; s.forEach(c => { var v = c.val(); v.id = c.key; products.push(v); }); renderUI(); renderCart(); });
+  db.ref('invoices').orderByChild('date').on('value', s => { invoices = []; s.forEach(c => { var v = c.val(); v.id = c.key; invoices.push(v); }); invoices.reverse(); renderUI(); if (isAdmin()) renderReport(); });
+  if (!isAdmin()) return;
+  db.ref('users').on('value', s => { users = []; s.forEach(c => { var v = c.val() || {}; v.id = c.key; users.push(v); }); renderUsers(); });
+  db.ref('logs').orderByChild('date').limitToLast(50).on('value', s => { var r = []; s.forEach(c => { r.unshift(c.val()); }); $('logTable').innerHTML = r.map(l => `<tr><td>${esc(dt(l.date))}</td><td>${esc(l.user)}</td><td>${esc(l.action)}</td><td>${esc(l.details)}</td></tr>`).join(''); });
+  db.ref('shifts').orderByChild('date').limitToLast(30).on('value', s => { var r = []; s.forEach(c => { r.unshift(c.val()); }); $('shiftTable').innerHTML = r.map(x => `<tr><td>${esc(x.email)}</td><td>${esc(dt(x.from))}<br>←<br>${esc(dt(x.to))}</td><td>${x.count}</td><td>${fmt(x.total)}</td><td>${Object.keys(x.byPay || {}).map(k => esc(k) + ': ' + fmt(x.byPay[k])).join('<br>')}</td></tr>`).join(''); });
+}
+function renderUI() {
+  var s = $('invSearch').value.trim().toLowerCase(), f = $('billSearch').value.trim().toLowerCase(), st = $('billStatus').value;
+  var ps = $('posSearch').value.trim().toLowerCase(), hits = [], keep = $('salesProdSelect').value;
+  var rows = '', opts = '<option value="">اختر المنتج</option>', low = [], inv = '', cnt = 0, sum = 0, net = 0;
+  products.forEach(p => {
+    if (p.qty <= LOW) low.push(p.name + ' (' + p.qty + ')');
+    if (!ps || ((p.name || '') + ' ' + (p.barcode || '')).toLowerCase().indexOf(ps) >= 0) { hits.push(p.id); opts += `<option value="${p.id}"${p.qty <= 0 ? ' disabled' : ''}>${esc(p.name)} - ${esc(p.price)} ج.م [${esc(p.qty)}]</option>`; }
+    if (s && ((p.name || '') + ' ' + (p.category || '') + ' ' + (p.barcode || '')).toLowerCase().indexOf(s) < 0) return;
+    rows += `<tr class="${p.qty <= LOW ? 'low' : ''}"><td>${esc(p.name)}</td><td>${esc(p.category)}</td><td>${esc(p.price)}</td><td class="admin-only">${esc(p.cost || 0)}</td><td>${esc(p.qty)}</td><td class="admin-only"><button class="o sm" onclick="editF('${p.id}','price')">بيع</button><button class="o sm" onclick="editF('${p.id}','cost')">شراء</button><button class="sm" onclick="editF('${p.id}','qty')">رصيد</button><button class="d sm" onclick="delProduct('${p.id}')">حذف</button></td></tr>`;
+  });
+  invoices.forEach(i => {
+    if (!i.isReturned) net += Number(i.total) || 0;
+    var its = itemsOf(i), c = i.customer || {};
+    if ((st === 'ok' && (i.isReturned || i.refunded)) || (st === 'ret' && !i.isReturned && !i.refunded)) return;
+    if (f && (its.map(x => x.name).join(' ') + ' ' + i.id.slice(-5) + ' ' + (c.name || '') + ' ' + (c.phone || '')).toLowerCase().indexOf(f) < 0) return;
+    if (!i.isReturned) { cnt++; sum += Number(i.total) || 0; }
+    var lines = its.map((x, k) => { var rem = x.qty - (x.retQty || 0); return esc(x.name) + ' ×' + esc(x.qty) + (x.retQty ? ' <small>(مرتجع ' + x.retQty + ')</small>' : '') + (rem > 0 ? ` <button class="d sm admin-only" onclick="returnItem('${i.id}',${k},${rem})">↩</button>` : ''); }).join('<br>');
+    inv += `<tr class="${i.isReturned ? 'ret' : ''}"><td>#${esc(i.id.slice(-5).toUpperCase())}<br><small>${esc(i.cashier || '')}<br>${esc(c.name || '')} ${esc(c.phone || '')}</small></td><td>${esc(dt(i.date))}</td><td>${lines}</td><td>${esc(i.total)}${i.discount ? '<br><small>خصم ' + esc(i.discount) + '</small>' : ''}${i.refunded ? '<br><small>مُرجَع ' + esc(i.refunded) + '</small>' : ''}</td><td>${esc(i.pay || 'كاش')}</td><td>${i.isReturned ? 'مرتجع' : i.refunded ? 'مرتجع جزئي' : 'مكتملة'}</td><td><button class="sm" onclick="printById('${i.id}')">طباعة</button>${i.isReturned ? '' : `<button class="d sm admin-only" onclick="makeReturn('${i.id}')">مرتجع كامل</button>`}</td></tr>`;
+  });
+  $('inventoryTable').innerHTML = rows; $('salesProdSelect').innerHTML = opts;
+  $('salesProdSelect').value = hits.indexOf(keep) >= 0 ? keep : (ps && hits.length === 1 ? hits[0] : '');
+  $('invoicesTable').innerHTML = inv;
+  $('billSum').innerText = f ? `النتيجة: ${cnt} فاتورة سارية بإجمالي ${fmt(sum)} ج.م` : `صافي المبيعات: ${fmt(net)} ج.م | عدد الفواتير: ${invoices.length}`;
+  $('lowBanner').style.display = low.length ? 'block' : 'none'; $('lowBanner').textContent = '⚠️ قربت تخلص: ' + low.join('، ');
+}
+function renderReport() {
+  var n = new Date(), d0 = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime(), w0 = d0 - 6 * 864e5, m0 = new Date(n.getFullYear(), n.getMonth(), 1).getTime();
+  var R = { t: [0, 0, 0], w: [0, 0, 0], m: [0, 0, 0] }, top = {}, pay = {};
+  invoices.forEach(i => { if (i.isReturned) return; var its = itemsOf(i), profit = i.total - its.reduce((a, x) => a + (x.qty - (x.retQty || 0)) * (x.cost || 0), 0); [['t', d0], ['w', w0], ['m', m0]].forEach(p => { if (i.date >= p[1]) { R[p[0]][0] += i.total; R[p[0]][1] += profit; R[p[0]][2]++; } }); if (i.date >= m0) { its.forEach(x => top[x.name] = (top[x.name] || 0) + x.qty - (x.retQty || 0)); var k = i.pay || 'كاش'; pay[k] = (pay[k] || 0) + i.total; } });
+  var box = (t, r) => `<div><small>${t}</small><b>${fmt(r[0])} ج.م</b>ربح: ${fmt(r[1])}<br>${r[2]} فاتورة</div>`;
+  var tops = Object.keys(top).sort((a, b) => top[b] - top[a]).slice(0, 5);
+  $('repBox').innerHTML = `<div class="kpi">${box('النهارده', R.t)}${box('آخر 7 أيام', R.w)}${box('الشهر', R.m)}</div><h3>أكتر المنتجات مبيعاً (الشهر)</h3><table>${tops.map((k, i) => `<tr><td>${i + 1}</td><td>${esc(k)}</td><td>${top[k]}</td></tr>`).join('') || '<tr><td>لا يوجد</td></tr>'}</table><h3>حسب طريقة الدفع (الشهر)</h3><table>${Object.keys(pay).map(k => `<tr><td>${esc(k)}</td><td>${fmt(pay[k])} ج.م</td></tr>`).join('') || '<tr><td>لا يوجد</td></tr>'}</table><p style="font-size:12px;color:#777">الربح = الإجمالي بعد الخصم والمرتجع − سعر الشراء.</p>`;
+}
+function renderUsers() {
+  var me = auth.currentUser ? auth.currentUser.uid : '';
+  $('usersTable').innerHTML = users.map(u => `<tr><td>${esc(u.email || u.id)}</td><td><select onchange="setRole('${u.id}',this.value)"${u.id === me ? ' disabled' : ''}>` + [['admin', 'مدير'], ['cashier', 'كاشير'], ['disabled', 'معطّل']].map(r => `<option value="${r[0]}"${u.role === r[0] ? ' selected' : ''}>${r[1]}</option>`).join('') + '</select></td></tr>').join('');
+}
+function addUser() {
+  if (!isAdmin()) return;
+  var email = $('newUserEmail').value.trim(), pass = $('newUserPass').value, r = $('newUserRole').value;
+  if (!email || pass.length < 6) return alert('اكتب الإيميل وباسورد 6 حروف على الأقل');
+  var app2 = firebase.apps.find(a => a.name === 'sec') || firebase.initializeApp(firebaseConfig, 'sec');
+  app2.auth().createUserWithEmailAndPassword(email, pass).then(c => db.ref('users/' + c.user.uid).set({ email: email, role: r }).then(() => app2.auth().signOut())).then(() => { log('إضافة مستخدم', email + ' (' + r + ')'); $('newUserEmail').value = ''; $('newUserPass').value = ''; alert('تمت الإضافة.'); }).catch(e => alert('خطأ: ' + e.code));
+}
+function setRole(uid, r) { if (!isAdmin()) return; var u = users.find(x => x.id === uid); db.ref('users/' + uid + '/role').set(r).then(() => log('تغيير دور', (u ? u.email : uid) + ' ← ' + r)).catch(() => alert('فشل.')); }
+function addProduct() {
+  if (!isAdmin()) return;
+  var name = $('prodName').value.trim(), price = parseFloat($('prodPrice').value), cost = parseFloat($('prodCost').value) || 0, qty = parseInt($('prodQty').value), bc = $('prodBarcode').value.trim();
+  if (!navigator.onLine) return alert('إضافة المنتجات تحتاج اتصالًا بالإنترنت في هذه النسخة.');
+  if (!name || isNaN(price) || isNaN(qty) || price < 0 || qty < 0) return alert('أدخل البيانات بشكل صحيح');
+  if (bc && products.some(p => p.barcode === bc)) return alert('هذا الباركود مستخدم لمنتج آخر');
+  db.ref('products').push({ name: name, category: $('prodCategory').value, barcode: bc, price: price, cost: cost, qty: qty }).then(() => { log('إضافة منتج', name + ' | كمية ' + qty); ['prodName', 'prodPrice', 'prodCost', 'prodQty', 'prodBarcode'].forEach(i => $(i).value = ''); alert('تمت الإضافة.'); }).catch(() => alert('فشلت الإضافة.'));
+}
+function editF(id, f) { if (!isAdmin()) return; if (!navigator.onLine) return alert('تعديل المخزون يحتاج اتصالًا بالإنترنت في هذه النسخة.'); var p = P(id); if (!p) return; var lbl = { price: 'سعر البيع', cost: 'سعر الشراء', qty: 'الرصيد' }[f]; var v = prompt(lbl + ' الجديد لـ (' + p.name + '):', p[f] || 0), n = f === 'qty' ? parseInt(v) : parseFloat(v); if (v === null || isNaN(n) || n < 0) return; db.ref('products/' + id + '/' + f).set(n).then(() => log('تعديل ' + lbl, p.name + ': ' + (p[f] || 0) + ' ← ' + n)).catch(() => alert('فشل.')); }
+function delProduct(id) { if (!isAdmin()) return; if (!navigator.onLine) return alert('حذف المنتجات يحتاج اتصالًا بالإنترنت في هذه النسخة.'); var p = P(id); if (!p || !confirm('حذف "' + p.name + '" نهائياً؟')) return; cart = cart.filter(c => c.id !== id); db.ref('products/' + id).remove().then(() => log('حذف منتج', p.name)).catch(() => alert('فشل الحذف.')); }
+function addItem(id, q) { var p = P(id); if (!p) return alert('منتج غير موجود'); var c = cart.find(x => x.id === id); if ((c ? c.qty : 0) + q > p.qty) return alert('المتاح من "' + p.name + '" هو ' + p.qty + ' فقط'); if (c) c.qty += q; else cart.push({ id: id, name: p.name, qty: q }); renderCart(); }
+function addToCart() { var q = parseInt($('salesQty').value), id = $('salesProdSelect').value; if (!id || isNaN(q) || q <= 0) return alert('اختر المنتج وكمية صحيحة'); addItem(id, q); $('salesQty').value = 1; }
+function addByBarcode(code) { code = (code || '').trim(); if (!code) return; var p = products.find(x => x.barcode === code); if (p) addItem(p.id, 1); else alert('باركود غير مسجل: ' + code); }
+var stream, timer;
+function scan() { if (!('BarcodeDetector' in window)) return alert('المتصفح لا يدعم مسح الباركود بالكاميرا. اكتب الرقم أو استخدم قارئ باركود.'); navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(s => { stream = s; var v = $('cam'); v.srcObject = s; v.play(); $('camBox').style.display = 'block'; var det = new BarcodeDetector(); timer = setInterval(() => det.detect(v).then(c => { if (c.length) { stopScan(); addByBarcode(c[0].rawValue); } }).catch(() => {}), 400); }).catch(() => alert('تعذر تشغيل الكاميرا')); }
+function stopScan() { clearInterval(timer); if (stream) stream.getTracks().forEach(t => t.stop()); $('camBox').style.display = 'none'; }
+function removeFromCart(id) { cart = cart.filter(c => c.id !== id); renderCart(); }
+function calc() { var sub = cart.reduce((s, c) => s + c.qty * ((P(c.id) || {}).price || 0), 0), v = parseFloat($('discVal').value) || 0; var d = $('discType').value === '%' ? sub * v / 100 : v; d = fmt(Math.min(Math.max(d, 0), sub)); return { sub: sub, disc: d, total: fmt(sub - d) }; }
+function renderCart() { $('cartTable').innerHTML = cart.map(c => `<tr><td>${esc(c.name)}</td><td>${c.qty}</td><td>${fmt(c.qty * ((P(c.id) || {}).price || 0))}</td><td><button class="d sm" onclick="removeFromCart('${c.id}')">✕</button></td></tr>`).join(''); $('cartTotal').innerText = calc().total; }
+$('discType').addEventListener('change', renderCart);
+function checkout() {
+  if (!navigator.onLine) return alert('البيع دون إنترنت غير مفعّل بعد. لتجنب فقدان الفواتير أو اختلاف المخزون، اتصل بالإنترنت ثم أعد المحاولة.');
+  if (!cart.length) return alert('السلة فاضية!');
+  var btn = $('saleBtn'), done = [], items = [], chain = Promise.resolve(), t = calc(), u = auth.currentUser;
+  btn.disabled = true;
+  cart.forEach(c => { chain = chain.then(() => db.ref('products/' + c.id + '/qty').transaction(q => (q === null ? q : q < c.qty ? undefined : q - c.qty)).then(r => { if (!r.committed || r.snapshot.val() === null) throw new Error('الكمية غير متوفرة: ' + c.name); done.push(c); items.push({ prodId: c.id, name: c.name, qty: c.qty, price: (P(c.id) || {}).price || 0, cost: (P(c.id) || {}).cost || 0 }); })); });
+  chain.then(() => { var inv = { date: TS(), items: items, subtotal: t.sub, discount: t.disc, total: t.total, pay: $('payMethod').value, cashier: u.email, cashierId: u.uid, isReturned: false, customer: { name: $('custName').value.trim(), phone: $('custPhone').value.trim() } }; var ref = db.ref('invoices').push(); return ref.set(inv).then(() => { log('بيع', '#' + ref.key.slice(-5).toUpperCase() + ' = ' + t.total + ' ج.م'); cart = []; ['discVal', 'custName', 'custPhone'].forEach(i => $(i).value = ''); renderCart(); alert('تم البيع ✅ الإجمالي: ' + t.total + ' ج.م'); }); })
+  .catch(e => Promise.all(done.map(c => db.ref('products/' + c.id + '/qty').transaction(q => (q === null ? q : q + c.qty)))).then(() => alert(e && e.message ? e.message : 'حدث خطأ، لم تتم العملية.'))).then(() => { btn.disabled = false; });
+}
+function doReturn(id, idx, q) {
+  if (!navigator.onLine) return alert('المرتجعات تحتاج اتصالًا بالإنترنت في هذه النسخة.');
+  var back = [];
+  db.ref('invoices/' + id).transaction(inv => {
+    if (inv === null) return inv;
+    if (!inv.items) inv.items = itemsOf(inv);
+    var ratio = inv.subtotal ? (inv.subtotal - (inv.discount || 0)) / inv.subtotal : 1, ref = 0;
+    inv.items.forEach((x, k) => { if (idx !== -1 && k !== idx) return; var rem = x.qty - (x.retQty || 0), n = idx === -1 ? rem : q; if (n <= 0 || n > rem) return; x.retQty = (x.retQty || 0) + n; ref += n * x.price * ratio; back.push({ prodId: x.prodId, qty: n, name: x.name }); });
+    if (!back.length) return;
+    inv.refunded = fmt((inv.refunded || 0) + ref); inv.total = fmt(inv.total - ref);
+    if (inv.items.every(x => (x.retQty || 0) >= x.qty)) { inv.isReturned = true; inv.total = 0; }
+    return inv;
+  }).then(r => { if (!r.committed || !back.length) return alert('لا توجد كمية متبقية للإرجاع في هذه الفاتورة.'); return Promise.all(back.map(x => db.ref('products/' + x.prodId + '/qty').transaction(v => (v === null ? v : v + x.qty)))).then(() => { log('مرتجع', '#' + id.slice(-5).toUpperCase() + ': ' + back.map(x => x.name + '×' + x.qty).join('، ')); alert('تم المرتجع وتحديث المخزون.'); }); }).catch(() => alert('حدث خطأ أثناء المرتجع.'));
+}
+function returnItem(id, k, rem) { if (!isAdmin()) return; var v = rem > 1 ? prompt('كم قطعة تريد إرجاعها؟ (المتبقي ' + rem + ')', 1) : '1', n = parseInt(v); if (v === null || isNaN(n) || n < 1 || n > rem) return; doReturn(id, k, n); }
+function makeReturn(id) { if (!isAdmin() || !confirm('إرجاع كل الأصناف المتبقية في الفاتورة؟')) return; doReturn(id, -1, 0); }
+function closeShift() {
+  if (!navigator.onLine) return alert('إقفال الوردية يحتاج اتصالًا بالإنترنت في هذه النسخة.');
+  var u = auth.currentUser;
+  db.ref('shifts').orderByChild('uid').equalTo(u.uid).limitToLast(1).once('value').then(s => {
+    var from = 0; s.forEach(c => { from = c.val().to; });
+    var now = Date.now(), mine = invoices.filter(i => i.cashierId === u.uid && !i.isReturned && i.date > from), byPay = {}, total = 0;
+    mine.forEach(i => { var k = i.pay || 'كاش'; byPay[k] = fmt((byPay[k] || 0) + i.total); total += i.total; }); total = fmt(total);
+    var txt = mine.length + ' فاتورة بإجمالي ' + total + ' ج.م\n' + Object.keys(byPay).map(k => k + ': ' + byPay[k]).join('\n');
+    if (!confirm('إقفال الوردية؟\n' + txt)) return;
+    return db.ref('shifts').push({ uid: u.uid, email: u.email, from: from || (mine.length ? mine[mine.length - 1].date : now), to: now, date: TS(), count: mine.length, total: total, byPay: byPay }).then(() => { log('إقفال وردية', txt.replace(/\n/g, ' | ')); alert('تم إقفال الوردية.\n' + txt); });
+  }).catch(() => alert('فشل إقفال الوردية.'));
+}
+function saveStoreName() { if (!isAdmin()) return; if (!navigator.onLine) return alert('حفظ إعدادات المحل يحتاج اتصالًا بالإنترنت.'); var n = $('storeNameInput').value.trim(); db.ref('settings/storeName').set(n).then(() => { log('تغيير اسم المحل', n); alert('تم الحفظ.'); }).catch(() => alert('فشل الحفظ.')); }
+function printById(id) { var i = invoices.find(x => x.id === id); if (i) printInvoice(i); }
+function printInvoice(i) {
+  var c = i.customer || {}, its = itemsOf(i).filter(x => x.qty - (x.retQty || 0) > 0);
+  $('printArea').innerHTML = `<h2 style="text-align:center">${esc(storeName)}</h2><p>فاتورة #${esc(i.id.slice(-5).toUpperCase())}<br>${esc(dt(i.date))}<br>الدفع: ${esc(i.pay || 'كاش')}${c.name ? '<br>العميل: ' + esc(c.name) + ' ' + esc(c.phone || '') : ''}${i.isReturned ? '<br><b>(مرتجعة)</b>' : i.refunded ? '<br><b>(بعد مرتجع جزئي)</b>' : ''}</p><table border="1" style="width:100%;border-collapse:collapse;text-align:center"><tr><th>المنتج</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr>${its.map(x => { var q = x.qty - (x.retQty || 0); return `<tr><td>${esc(x.name)}</td><td>${q}</td><td>${esc(x.price)}</td><td>${fmt(q * x.price)}</td></tr>`; }).join('')}</table>${i.discount && !i.refunded ? '<p>الخصم: ' + esc(i.discount) + ' ج.م</p>' : ''}<h3>الإجمالي: ${esc(i.total)} ج.م</h3><p style="text-align:center">شكراً لزيارتكم</p>`;
+  window.print();
+}
+updateConnectionBanner();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js")
+      .catch(error => console.error("Service Worker registration failed:", error));
+  });
+}
+</script>
+</body>
+</html>
